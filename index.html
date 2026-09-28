@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Flashcard Generator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#064E3B] text-[#F8E7C9] min-h-screen pb-12">
+  <div class="max-w-5xl mx-auto p-6">
+    <header class="text-center py-6 border-b border-slate-800 mb-8">
+      <h1 class="text-3xl font-extrabold text-[#F8E7C9]">AI Flashcard Generator</h1>
+      <p class="text-[#F8E7C9] text-sm mt-1">Study Smarter &bull; SQLite Backed &bull; Interactive 3D Flip Cards</p>
+    </header>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <!-- Input Section (Strictly No Form) -->
+      <div class="bg-[#064E3B] p-5 rounded-xl border border-slate-600 h-fit shadow-lg">
+        <h2 class="text-lg font-semibold text-[#] mb-4">Create Deck</h2>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-xs font-medium text-[#F8E7C9] mb-1">Deck Title</label>
+            <input id="title" type="text" placeholder="e.g. Data Structures" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-[#F8E7C9] mb-1">Notes Content</label>
+            <textarea id="content" rows="6" placeholder="Write your notes here..." class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"></textarea>
+          </div>
+          <button type="button" id="genBtn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2.5 rounded-lg transition-all text-sm cursor-pointer shadow">
+            Generate Flashcards
+          </button>
+        </div>
+      </div>
+
+      <!-- Flashcards Output Section -->
+      <div class="md:col-span-2">
+        <div class="flex justify-between items-center mb-4">
+          <h2 id="currentDeckTitle" class="text-lg font-semibold text-[#F8E7C9]">Generated Flashcards</h2>
+          <span class="text-xs text-[#F8E7C9] font-medium bg-[#064E3B] border border-indigo-800/40 px-2 py-1 rounded border-2">Click card to flip</span>
+        </div>
+
+        <div id="cardsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div id="emptyNotice" class="col-span-full text-center py-16 text-[#F8E7C9] border border-dashed border-slate-800 rounded-xl">
+            No cards yet. Enter notes and click "Generate Flashcards"!
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .flip-card {
+      perspective: 1000px;
+      height: 220px;
+    }
+    .flip-card-inner {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+      transform-style: preserve-3d;
+      cursor: pointer;
+    }
+    .flip-card.flipped .flip-card-inner {
+      transform: rotateY(180deg);
+    }
+    .flip-card-front, .flip-card-back {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+      border-radius: 0.75rem;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .flip-card-back {
+      transform: rotateY(180deg);
+    }
+  </style>
+
+  <script>
+    const API_BASE = window.location.origin + "/api";
+
+    document.getElementById("genBtn").addEventListener("click", async function(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+
+      const titleInput = document.getElementById("title");
+      const contentInput = document.getElementById("content");
+      const btn = document.getElementById("genBtn");
+
+      const title = titleInput.value.trim();
+      const content = contentInput.value.trim();
+
+      if (!title || !content) {
+        alert("Please fill the Title & Notes!");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerText = "Generating with Groq AI...";
+
+      try {
+        const res = await fetch(`${API_BASE}/generate-deck`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, content, card_count: 4 })
+        });
+
+        const data = await res.json();
+        console.log("Deck Data Received:", data);
+
+        if (!res.ok) {
+          throw new Error(data.detail || "Server Error");
+        }
+
+        renderCards(data.title || title, data.cards || []);
+      } catch (err) {
+        console.error("Fetch Failure:", err);
+        alert("Error: " + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Generate Flashcards";
+      }
+    });
+
+    function renderCards(title, cards) {
+      document.getElementById("currentDeckTitle").innerText = title;
+      const grid = document.getElementById("cardsGrid");
+      grid.innerHTML = "";
+
+      if (!cards || cards.length === 0) {
+        grid.innerHTML = `<div class="col-span-full text-center py-12 text-amber-400 bg-amber-950/20 border border-amber-500/30 rounded-xl">Cards generate nahi ho paye. Backend terminal check karo.</div>`;
+        return;
+      }
+
+      cards.forEach((card, index) => {
+        const qText = card.question || card.q || "No Question";
+        const aText = card.answer || card.a || "No Answer";
+
+        const cardEl = document.createElement("div");
+        cardEl.className = "flip-card select-none";
+        cardEl.innerHTML = `
+          <div class="flip-card-inner" onclick="this.parentElement.classList.toggle('flipped')">
+            <!-- Front (Question) -->
+            <div class="flip-card-front bg-slate-800 border border-[#] shadow-lg">
+              <div class="flex justify-between items-center">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-400">Card #${index + 1}</span>
+                <span class="text-[10px] text-slate-400 bg-slate-700/60 px-2 py-0.5 rounded">QUESTION</span>
+              </div>
+              <p class="text-sm font-semibold text-slate-100 my-auto leading-relaxed text-center">${qText}</p>
+              <span class="text-[11px] text-slate-400 text-right">Click to flip &rarr;</span>
+            </div>
+
+            <!-- Back (Answer) -->
+            <div class="flip-card-back bg-slate-950 border border-emerald-500/40 shadow-lg">
+              <div class="flex justify-between items-center">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-emerald-400">Card #${index + 1}</span>
+                <span class="text-[10px] text-emerald-300 bg-emerald-950/70 px-2 py-0.5 rounded border border-emerald-500/30">ANSWER</span>
+              </div>
+              <p class="text-xs text-slate-200 my-auto leading-relaxed text-center">${aText}</p>
+              <span class="text-[11px] text-slate-400 text-right">&larr; Click to flip</span>
+            </div>
+          </div>
+        `;
+        grid.appendChild(cardEl);
+      });
+    }
+  </script>
+</body>
+</html>
